@@ -1,0 +1,4 @@
+---
+rng_tools_device: "/dev/urandom"
+go_version:       "1.23.0"
+go_install_dir:   "/usr/local"
