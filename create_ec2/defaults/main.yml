@@ -1,0 +1,9 @@
+---
+instance_type:   t2.medium
+ami_id:          ami-0e86e20dae9224db8
+aws_region:      us-east-1
+ssh_key_name:    my_key
+subnet_id:       subnet-b16c1cd4
+security_group:  sg-0ffb6c3ffeac06e22
+ebs_volume_size: 20
+instance_delay_seconds: 30
