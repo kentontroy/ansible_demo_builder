@@ -1,0 +1,311 @@
+---
+- name: Update apt packages
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  delegate_to: "{{ server_ip }}"
+  become: yes
+  become_method: sudo
+
+- name: Install rng-tools to ensure enough entropy
+  block:
+    - name: Install rng-tools
+      ansible.builtin.apt:
+        name: rng-tools
+        state: present
+        update_cache: yes
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+
+    - name: Copy rng-tools configuration file
+      template:
+        src: rng_tools_debian.j2
+        dest: /etc/default/rng-tools-debian
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+   
+    - name: Restart rng-tools service
+      ansible.builtin.systemd:
+        name: rng-tools-debian
+        state: restarted
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+  tags:
+    - install_rng_tools
+
+- name: Install OpenJDK 11
+  block:
+    - name: Check if JDK 11 is installed
+      ansible.builtin.command: java -version
+      register: java_version
+      delegate_to: "{{ server_ip }}"
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install OpenJDK 11 if not present
+      ansible.builtin.apt:
+        name: openjdk-11-jdk
+        state: present
+        update_cache: yes
+      when: java_version.rc != 0 or 'openjdk version "11.' not in java_version.stderr
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+  tags:
+    - install_java
+
+- name: Install Rust on Ubuntu
+  block:
+    - name: Ensure curl is installed
+      apt:
+        name: curl
+        state: present
+      register: curl_install_result
+      delegate_to: "{{ server_ip }}" 
+      become: yes 
+      become_method: sudo
+
+    - name: Check if curl installation was successful
+      fail:
+        msg: "Failed to install curl"
+      when: curl_install_result.failed
+
+    - name: Download Rust installation script
+      ansible.builtin.command: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o $HOME/rustup-init.sh
+      register: download_script_result
+      ignore_errors: yes
+      delegate_to: "{{ server_ip }}" 
+
+    - name: Check if Rust installation script was downloaded
+      fail:
+        msg: "Failed to download Rust installation script"
+      when: download_script_result.rc != 0
+
+    - name: Make Rust installation script executable
+      ansible.builtin.file:
+        path: $HOME/rustup-init.sh
+        mode: '0755'
+      when: download_script_result.rc == 0
+      delegate_to: "{{ server_ip }}" 
+
+    - name: Run Rust installation script
+      ansible.builtin.command: $HOME/rustup-init.sh -y
+      register: install_rust_result
+      ignore_errors: yes
+      delegate_to: "{{ server_ip }}" 
+
+    - name: Check if Rust installation was successful
+      fail:
+        msg: "Failed to install Rust"
+      when: install_rust_result.rc != 0
+
+# TODO: Don't really need this due to copying of .bashrc below
+    - name: Add Rust to PATH
+      ansible.builtin.shell: |
+        . $HOME/.cargo/env
+      when: install_rust_result.rc == 0
+      delegate_to: "{{ server_ip }}" 
+
+# TODO: express the full path to rustc b/c the shell hasn't been restarted
+    - name: Verify Rust installation
+      ansible.builtin.command: $HOME/.cargo/bin/rustc --version
+      register: rust_version_result
+      ignore_errors: yes
+      delegate_to: "{{ server_ip }}" 
+
+    - name: Check if Rust is installed
+      fail:
+        msg: "Rust installation verification failed"
+      when: rust_version_result.rc != 0
+
+    - name: Display Rust version
+      debug:
+        msg: "Rust version: {{ rust_version_result.stdout }}"
+      when: rust_version_result.rc == 0
+  tags:
+    - install_rust
+
+- name: Install Golang on Ubuntu
+  block:
+    - name: Set Go installation flag
+      command: go version
+      register: go_version_check
+      ignore_errors: yes
+      changed_when: false
+      delegate_to: "{{ server_ip }}" 
+
+    - name: React to installation flag
+      set_fact:
+        go_install_required: "{{ go_version_check.rc != 0 or go_version not in go_version_check.stdout }}"
+
+    - name: Download Go binary
+      get_url:
+        url:  "https://golang.org/dl/go{{ go_version }}.linux-amd64.tar.gz"
+        dest: "/root/go{{ go_version }}.linux-amd64.tar.gz"
+      when: go_install_required
+      register: download_result
+      ignore_errors: yes
+      delegate_to: "{{ server_ip }}" 
+      become: yes
+      become_method: sudo
+
+    - name: Check if download was successful
+      fail:
+        msg: "Failed to download Go binary"
+      when: go_install_required and download_result.failed
+
+    - name: Create directory with specific permissions
+      ansible.builtin.file:
+        path: "{{ go_install_dir }}"
+        state: directory
+        mode: '0755'
+      delegate_to: "{{ server_ip }}" 
+      become: yes
+      become_method: sudo
+
+    - name: Extract Go binary
+      unarchive:
+        src: "/root/go{{ go_version }}.linux-amd64.tar.gz"
+        dest: "{{ go_install_dir }}"
+        remote_src: yes
+      when: go_install_required
+      register: extract_result
+      ignore_errors: yes
+      delegate_to: "{{ server_ip }}" 
+      become: yes
+      become_method: sudo
+
+    - name: Check if extraction was successful
+      fail:
+        msg: "Failed to extract Go binary"
+      when: go_install_required and extract_result.failed
+
+    - name: Set up Go environment variables
+      lineinfile:
+        dest: "/etc/profile.d/go.sh"
+        line: "{{ item }}"
+        create: yes
+        mode: '0644'
+      with_items:
+        - 'export GOROOT="{{ go_install_dir }}/go"'
+        - 'export PATH=$PATH:$GOROOT/bin'
+      when: go_install_required
+      register: env_setup_result
+      ignore_errors: yes
+      delegate_to: "{{ server_ip }}" 
+      become: yes
+      become_method: sudo
+
+# TODO: env_setup_result dict object has no attributes 'rc' or 'failed'
+#    - name: Check if environment setup was successful
+#      fail:
+#        msg: "Failed to set up Go environment variables"
+#      when: go_install_required and env_setup_result.rc != 0
+
+    - name: Reload shell environment
+      ansible.builtin.shell: |
+        . "/etc/profile.d/go.sh"
+      args:
+        executable: /bin/bash
+      when: go_install_required
+      delegate_to: "{{ server_ip }}" 
+
+    - name: Verify Go installation
+      command: "{{ go_install_dir }}/go/bin/go version"
+      register: go_verify_result
+      changed_when: false
+      ignore_errors: yes
+      delegate_to: "{{ server_ip }}" 
+
+    - name: Check if Go verification was successful
+      fail:
+        msg: "Go installation verification failed"
+      when: go_verify_result.rc != 0
+
+    - name: Display Go version
+      debug:
+        msg: "Go version: {{ go_verify_result.stdout }}"
+      when: go_verify_result.rc == 0
+      delegate_to: "{{ server_ip }}" 
+
+  tags:
+    - install_golang
+
+- name: Configure the FQDN for the server
+  block:
+    - name: Set new domain name
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1 {{ inventory_hostname }} {{ inventory_hostname }}.{{ new_domain_name }}"
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+
+    - name: Set hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}.{{ new_domain_name }}"
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+
+    - name: Restart hostname service
+      ansible.builtin.systemd:
+        name: systemd-hostnamed
+        state: restarted
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+
+- name: Check Python installation and version
+  block:
+    - name: Check if Python is installed
+      ansible.builtin.command: which python3
+      register: python_check
+      ignore_errors: yes
+      changed_when: false
+      delegate_to: "{{ server_ip }}"
+
+    - name: Get Python version
+      ansible.builtin.command: python3 --version
+      register: python_version
+      when: python_check.rc == 0
+      changed_when: false
+      delegate_to: "{{ server_ip }}"
+
+    - name: Print Python version
+      ansible.builtin.debug:
+        msg: "Python is installed. Version: {{ python_version.stdout }}"
+      when: python_check.rc == 0
+
+    - name: Print Python not found message
+      ansible.builtin.debug:
+        msg: "Python is not installed on this system."
+      when: python_check.rc != 0
+    
+- name: Create a symbolic link for Python
+  block:
+    - name: Check for the source path
+      ansible.builtin.stat:
+        path: "/usr/bin/python3"
+      register: file_stat
+
+    - name: Create symbolic link with specific permissions
+      ansible.builtin.file:
+        src: "/usr/bin/python3"
+        dest: "/usr/bin/python"
+        state: link
+        mode: '0755'
+      when: file_stat.stat.exists
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+
+- name: Copy .bashrc configuration file
+  template:
+    src: .bashrc.j2
+    dest: $HOME/.bashrc
+  delegate_to: "{{ server_ip }}"
