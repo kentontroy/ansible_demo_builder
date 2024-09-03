@@ -1,0 +1,15 @@
+---
+- name: Test changes to a Development Node on EC2
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    server_ip:          "44.195.61.162"
+    ssh_key_name:       "my_key"
+    new_domain_name:    "cloudera-lab.com"
+    inventory_hostname: "master"
+    ansible_user:       "ubuntu"
+    ansible_ssh_private_key_file: "./vault/my_key.pem"
+
+  roles:
+    - create_dev_node

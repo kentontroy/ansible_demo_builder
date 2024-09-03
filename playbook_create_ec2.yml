@@ -1,0 +1,24 @@
+---
+- name: Create EC2 Instance
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_prompt:
+    - name: aws_secret_key
+      prompt: "Enter your AWS Secret Access Key"
+      private: yes
+
+  vars:
+    aws_access_key:  AKIA2VJTYZOXEXWE4ULO 
+    instance_type:   t2.medium 
+    ami_id:          ami-0e86e20dae9224db8 
+    aws_region:      us-east-1 
+    ssh_key_name:    my_key 
+    subnet_id:       subnet-b16c1cd4 
+    security_group:  sg-0ffb6c3ffeac06e22 
+    ebs_volume_size: 20
+
+  roles:
+    - create_ec2
+
