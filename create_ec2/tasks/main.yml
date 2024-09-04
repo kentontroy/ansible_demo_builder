@@ -3,7 +3,7 @@
   amazon.aws.ec2_key:
     name: "{{ ssh_key_name }}"
 # TODO - fix hard coding of key name and location
-    key_material: "{{ lookup('file', '../vault/my_key.pub') }}"
+    key_material: "{{ lookup('file', './vault/my_key.pub') }}"
     region: "{{ aws_region }}"
     aws_access_key: "{{ aws_access_key }}"
     aws_secret_key: "{{ aws_secret_key }}"
