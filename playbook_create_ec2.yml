@@ -10,7 +10,6 @@
       private: yes
 
   vars:
-    aws_access_key:  AKIA2VJTYZOXEXWE4ULO 
     instance_type:   t2.medium 
     ami_id:          ami-0e86e20dae9224db8 
     aws_region:      us-east-1 
