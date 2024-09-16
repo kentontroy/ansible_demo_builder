@@ -10,6 +10,7 @@
 
 - name: Create EC2 instance
   amazon.aws.ec2_instance:
+    name: "{{ instance_name }}"
     aws_access_key: "{{ aws_access_key }}"
     aws_secret_key: "{{ aws_secret_key }}"
     instance_type: "{{ instance_type }}"
@@ -18,6 +19,7 @@
     key_name: "{{ ssh_key_name }}"
     vpc_subnet_id: "{{ subnet_id }}"
     security_group: "{{ security_group }}"
+    iam_instance_profile: "{{ iam_role_name }}"
     network:
       assign_public_ip: true
     volumes:
@@ -44,5 +46,44 @@
 - name: Set generated server_ip as a fact for other roles
   ansible.builtin.set_fact:
     server_ip: "{{ ec2_instance.instances[0].public_ip_address }}"
+    instance_id: "{{ ec2_instance.instances[0].instance_id }}"
 
+- name: Configure detailed monitoring for EC2 instance
+  block:
+    - name: Enable CloudWatch
+      amazon.aws.ec2_instance:
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        region: "{{ aws_region }}"
+        instance_ids: ["{{ instance_id }}"]
+        detailed_monitoring: "{{ 'yes' if enable_cloud_watch else 'no' }}"
+        state: running
+      when: enable_cloud_watch | bool
+
+    - name: Create CloudWatch alarm for high CPU utilization
+      amazon.aws.cloudwatch_metric_alarm:
+        access_key: "{{ aws_access_key }}"
+        secret_key: "{{ aws_secret_key }}"
+        region: "{{ aws_region }}"
+        state: present
+        name: "high-cpu-utilization-{{ instance_id }}"
+        metric: "CPUUtilization"
+        namespace: "AWS/EC2"
+        statistic: Average
+        comparison: "GreaterThanOrEqualToThreshold"
+        threshold: 80.0
+# The granularity in seconds of the returned metrics
+        period: 300
+        evaluation_periods: 2
+        unit: "Percent"
+        description: "This will alarm when CPU utilization is high"
+        dimensions:
+          InstanceId: "{{ instance_id }}"
+# TODO:        alarm_actions: ["arn:aws:sns:us-east-1:123456789012:my-topic"]
+# https://docs.ansible.com/ansible/latest/collections/amazon/aws/cloudwatch_metric_alarm_module.html#requirements
+      when: enable_cloud_watch | bool
+
+    - name: Display monitoring status
+      debug:
+        msg: "CloudWatch monitoring is {{ 'enabled' if enable_cloud_watch else 'disabled' }} for instance {{ instance_id }}"
 
