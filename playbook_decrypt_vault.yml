@@ -1,0 +1,13 @@
+---
+- name: Create EC2 Instance
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ./vault/aws_keys.yml
+
+  tasks:
+    - name: Display monitoring status
+      debug:
+        msg: "id: {{ aws_access_key }} secret: {{ aws_secret_key }}"
