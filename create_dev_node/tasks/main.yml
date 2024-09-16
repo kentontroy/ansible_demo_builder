@@ -281,11 +281,46 @@
         msg: "Python is installed. Version: {{ python_version.stdout }}"
       when: python_check.rc == 0
 
+# TODO: assumes that Python 3 is already installed
+#       doesn't make an effort to install Python3 if not
+    - name: Install pip3
+      ansible.builtin.apt:
+        name: python3-pip
+        state: present
+        update_cache: yes
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+      when: python_check.rc == 0
+
     - name: Print Python not found message
       ansible.builtin.debug:
         msg: "Python is not installed on this system."
       when: python_check.rc != 0
     
+    - name: Install pyenv dependencies
+      ansible.builtin.apt:
+        name: 
+          - python3-boto3
+          - libssl-dev
+          - libbz2-dev
+          - libncurses-dev
+          - libsqlite3-dev
+          - libreadline-dev
+          - liblzma-dev
+          - libffi-dev
+        state: present
+        update_cache: yes
+      delegate_to: "{{ server_ip }}"
+      become: yes
+      become_method: sudo
+      when: python_check.rc == 0
+
+    - name: Print Python not found message
+      ansible.builtin.debug:
+        msg: "Python is not installed on this system."
+      when: python_check.rc != 0
+
 - name: Create a symbolic link for Python
   block:
     - name: Check for the source path
@@ -304,8 +339,33 @@
       become: yes
       become_method: sudo
 
+# TODO: Fix - the template sources shell scripts for Go and Rust even if they're not installed
 - name: Copy .bashrc configuration file
   template:
     src: .bashrc.j2
     dest: $HOME/.bashrc
   delegate_to: "{{ server_ip }}"
+
+# TODO: https://superuser.com/questions/443406/how-can-i-produce-high-cpu-load-on-a-linux-server
+# stress --cpu 2 --vm 2 --vm-bytes 1G --vm-hang 60 --dry-run
+- name: Install stress tool for performance monitoring testing
+  ansible.builtin.apt:
+    name: stress
+    state: present
+    update_cache: yes
+  delegate_to: "{{ server_ip }}"
+  become: yes
+  become_method: sudo
+  when: enable_stress_tool | bool
+
+# TODO: sudo timedatectl set-timezone America/New_York
+- name: Set timezone to America/New_York
+  ansible.builtin.timezone:
+#    name: "America/New_York"
+    name: "{{ timezone }}"
+  delegate_to: "{{ server_ip }}"
+  become: yes
+  become_method: sudo
+
+
+
